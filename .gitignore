@@ -1,0 +1,7 @@
+﻿env/
+__pycache__/
+runs/
+runs_train/
+*.pt
+final_dataset/
+zone.json
