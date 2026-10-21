@@ -5,3 +5,4 @@ runs_train/
 *.pt
 final_dataset/
 zone.json
+videos/
