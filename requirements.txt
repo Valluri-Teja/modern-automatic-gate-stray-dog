@@ -1,0 +1,7 @@
+# YOLO26 needs a recent Ultralytics release - keep this unpinned / upgrade it:
+#   pip install -U ultralytics
+ultralytics
+opencv-python
+numpy
+# optional: real gate hardware over USB serial (Arduino / ESP32)
+# pyserial
