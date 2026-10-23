@@ -6,7 +6,7 @@ from dataclasses import dataclass, fields
 @dataclass
 class Config:
     # ---- input / model ----
-    source: str = "0"                 # 0 = webcam, path to video, or rtsp:// URL
+    source: str = ""                  # empty = pick a video file in a window | 0 = webcam | path | rtsp:// URL
     model: str = "yolo26n.pt"         # or your fine-tuned best.pt
     conf: float = 0.40                # detection confidence threshold
     iou: float = 0.50                 # NMS IoU threshold
@@ -17,6 +17,7 @@ class Config:
     # ---- gate zone ----
     zone_file: str = "zone.json"
     select_zone: bool = False         # force re-drawing the zone
+    zone_mode: str = "full"           # full (default, no clicking) | center | auto-gate | manual
 
     # ---- decision logic (distances are fractions of frame width) ----
     dwell_seconds: float = 1.5        # time inside zone before ENTRY event
@@ -54,4 +55,7 @@ def parse_args(argv=None) -> Config:
             ap.add_argument(flag, action="store_true", default=f.default)
         else:
             ap.add_argument(flag, type=type(f.default), default=f.default)
-    return Config(**vars(ap.parse_args(argv)))
+    cfg = Config(**vars(ap.parse_args(argv)))
+    if cfg.select_zone:
+        cfg.zone_mode = "manual"      # --select-zone alone means: let me draw the zone
+    return cfg

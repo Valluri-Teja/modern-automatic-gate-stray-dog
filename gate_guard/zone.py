@@ -7,11 +7,19 @@ import cv2
 import numpy as np
 
 
+# Automatic zones (normalised coordinates), no clicking needed.
+PRESETS = {
+    "full": [(-0.05, -0.05), (1.05, -0.05), (1.05, 1.05), (-0.05, 1.05)],   # whole frame
+    "center": [(0.25, 0.40), (0.75, 0.40), (0.85, 1.05), (0.15, 1.05)],     # lower-centre area
+}
+
+
 class GateZone:
     def __init__(self, points_norm):
         if len(points_norm) < 3:
             raise ValueError("A zone needs at least 3 points")
         self.points = [(float(x), float(y)) for x, y in points_norm]
+        self.visible = True          # False = do not shade the zone (whole-frame mode)
         self._cache = {}
 
     # ---- geometry ----

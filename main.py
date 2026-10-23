@@ -2,8 +2,10 @@
 """Stray Dog Gate Guard
 Camera -> YOLO26 detection -> tracking -> gate-zone analysis -> gate decision.
 
-  python main.py --source 0 --select-zone          # webcam, draw the zone first
+  python main.py                                   # opens a window: pick a video, dogs detected at once
+  python main.py --source 0                        # webcam
   python main.py --source videos/gate.mp4 --save-video
+  python main.py --source videos/gate.mp4 --zone-mode manual --select-zone   # draw your own gate zone
   python main.py --model runs_train/dog_yolo26n/weights/best.pt
 Keys: q/Esc quit | p pause | z redraw zone | s snapshot
 """
@@ -23,10 +25,53 @@ from gate_guard.events import ClipRecorder, EventLogger
 from gate_guard.gate_controller import make_gate
 from gate_guard.tracking import TrackBook
 from gate_guard.video_source import VideoSource
-from gate_guard.zone import GateZone, select_zone_interactive
+from gate_guard.zone import PRESETS, GateZone, select_zone_interactive
 
 
-def setup_zone(cfg, frame):
+def pick_video():
+    """Open a file window so you can choose a video (no command-line path needed)."""
+    try:
+        import tkinter as tk
+        from tkinter import filedialog
+        root = tk.Tk()
+        root.withdraw()
+        root.attributes("-topmost", True)
+        path = filedialog.askopenfilename(
+            title="Select a video",
+            filetypes=[("Video files", "*.mp4 *.avi *.mov *.mkv *.wmv *.webm"), ("All files", "*.*")])
+        root.destroy()
+        return path
+    except Exception as e:
+        print(f"[source] could not open the file window: {e}")
+        return ""
+
+
+def setup_zone(cfg, frame, run_dir):
+    mode = cfg.zone_mode
+    if mode in PRESETS:
+        print(f"[zone] automatic '{mode}' zone (no clicking)")
+        zone = GateZone(PRESETS[mode])
+        zone.visible = mode != "full"
+        return zone
+    if mode == "auto-gate":
+        pts = None
+        try:
+            from gate_guard.gate_finder import find_gate_zone
+            pts = find_gate_zone(frame)
+        except Exception as e:
+            print(f"[zone] automatic gate detection failed: {e}")
+        if pts is None:
+            print("[zone] no gate found, using the 'center' zone instead")
+            return GateZone(PRESETS["center"])
+        zone = GateZone(pts)
+        preview = frame.copy()
+        h, w = preview.shape[:2]
+        cv2.polylines(preview, [zone.polygon_px(w, h).astype("int32")], True, (0, 255, 255), 3)
+        cv2.imwrite(str(run_dir / "auto_zone.jpg"), preview)
+        print(f"[zone] gate found automatically, preview saved to {run_dir / 'auto_zone.jpg'}")
+        return zone
+    if mode != "manual":
+        sys.exit(f"Unknown --zone-mode '{mode}'. Use manual, full, center or auto-gate.")
     if not cfg.select_zone and Path(cfg.zone_file).exists():
         return GateZone.load(cfg.zone_file)
     if cfg.no_display:
@@ -42,6 +87,10 @@ def setup_zone(cfg, frame):
 
 def main():
     cfg = parse_args()
+    if not cfg.source:
+        cfg.source = pick_video()
+        if not cfg.source:
+            sys.exit("No video selected. Use --source 0 for the webcam or --source <video path>.")
     run_dir = Path(cfg.out_dir) / datetime.now().strftime("%Y%m%d_%H%M%S")
     run_dir.mkdir(parents=True, exist_ok=True)
 
@@ -49,7 +98,16 @@ def main():
     ok, first, t_first = src.read(timeout=10)
     if not ok:
         sys.exit("Could not read a frame from the source.")
-    zone = setup_zone(cfg, first)
+    if src.live:
+        # Webcams need ~1 s for auto-exposure; the first frames are often black.
+        for _ in range(45):
+            ok2, f2, t2 = src.read(timeout=1)
+            if ok2:
+                first, t_first = f2, t2
+        if first.mean() < 3:
+            print("[camera] the image is still black - close other apps using the camera, "
+                  "check the privacy shutter/key, or try --source 1")
+    zone = setup_zone(cfg, first, run_dir)
 
     from gate_guard.detector import DogDetector      # imported late: slow import
     detector = DogDetector(cfg)

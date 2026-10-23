@@ -60,3 +60,10 @@ Compare mAP of the pretrained model and the fine-tuned one on your own test clip
 
 ## Credits
 Original idea and base: https://github.com/rydercalmdown/dog_detector (check its license before redistributing).
+
+## Quick start (no zone drawing needed)
+    python main.py                      # opens a window: pick a video, dogs are detected immediately
+    python main.py --source 0           # webcam
+    python main.py --save-video         # also save the annotated video
+    python main.py --zone-mode manual --select-zone   # draw your own gate zone (for a real gate)
+By default the whole frame is treated as the restricted area; other zone modes: center, auto-gate (experimental).

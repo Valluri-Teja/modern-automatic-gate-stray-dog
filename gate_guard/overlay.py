@@ -21,10 +21,11 @@ def draw(frame, zone, tracks, persons, state, fps, stats, now):
     poly = zone.polygon_px(w, h).astype(np.int32)
     col = STATE_COLOUR[state]
 
-    shade = frame.copy()
-    cv2.fillPoly(shade, [poly], col)
-    cv2.addWeighted(shade, 0.22, frame, 0.78, 0, frame)
-    cv2.polylines(frame, [poly], True, col, th + 1)
+    if getattr(zone, "visible", True):
+        shade = frame.copy()
+        cv2.fillPoly(shade, [poly], col)
+        cv2.addWeighted(shade, 0.22, frame, 0.78, 0, frame)
+        cv2.polylines(frame, [poly], True, col, th + 1)
 
     for p in persons:
         cv2.rectangle(frame, (int(p[0]), int(p[1])), (int(p[2]), int(p[3])), (200, 120, 0), 1)
