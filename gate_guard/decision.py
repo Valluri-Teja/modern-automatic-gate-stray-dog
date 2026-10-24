@@ -34,6 +34,9 @@ class DecisionEngine:
         new_w, new_e = [], []
 
         for t in tracks:
+            if not t.confirmed:             # too short-lived: probably flicker, not a dog yet
+                t.status = "tracking"
+                continue
             if cfg.ignore_accompanied and t.accompanied:
                 t.status = "ignored"
                 continue

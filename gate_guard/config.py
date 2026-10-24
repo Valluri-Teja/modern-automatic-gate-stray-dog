@@ -27,6 +27,10 @@ class Config:
     zone_grace: float = 0.5           # tolerate detection flicker at zone edge
     clear_seconds: float = 3.0        # gate stays closed this long after dog leaves
     track_timeout: float = 2.0        # forget a lost track after this long
+    min_hits: int = 5                 # frames a dog must be tracked before it counts (filters flicker)
+    merge_window: float = 2.5         # a "new" dog appearing within this many seconds ...
+    merge_distance: float = 1.0       # ... and this close (x dog size) to a lost dog = same dog
+    no_merge: bool = False            # disable ID merging (to compare before/after)
     ignore_accompanied: bool = False  # ignore dogs that have a person next to them
     accompany_margin: float = 0.5     # how close a person must be (x dog size)
 
@@ -38,6 +42,7 @@ class Config:
     clip_post: float = 3.0
     no_display: bool = False          # headless mode
     no_sound: bool = False
+    no_gate_anim: bool = False        # hide the animated gate widget
     announce_cooldown: float = 10.0
 
     # ---- gate hardware ----

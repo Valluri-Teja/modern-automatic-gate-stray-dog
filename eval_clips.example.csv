@@ -1,0 +1,4 @@
+video,entry_times,dogs,notes
+videos/dog1.mp4,3.0,1,one dog walks into view at 3 s
+videos/street dog.mp4,2.5;20.0,2,second dog arrives at 20 s
+videos/empty_street.mp4,,0,negative clip - no dog at all (any gate close is a false alarm)

@@ -6,3 +6,4 @@ runs_train/
 final_dataset/
 zone.json
 videos/
+eval_runs/

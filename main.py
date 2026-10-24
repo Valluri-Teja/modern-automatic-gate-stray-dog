@@ -18,6 +18,7 @@ from pathlib import Path
 import cv2
 
 from gate_guard import overlay
+from gate_guard.overlay import GateAnimator
 from gate_guard.alerts import Announcer
 from gate_guard.config import parse_args
 from gate_guard.decision import DecisionEngine, GateState
@@ -112,6 +113,7 @@ def main():
     from gate_guard.detector import DogDetector      # imported late: slow import
     detector = DogDetector(cfg)
     book, engine = TrackBook(cfg), DecisionEngine(cfg)
+    gate_anim = None if cfg.no_gate_anim else GateAnimator()
     gate, speaker = make_gate(cfg), Announcer(not cfg.no_sound, cfg.announce_cooldown)
     log = EventLogger(run_dir, t0=t_first)
     clips = ClipRecorder(run_dir / "clips", cfg.clip_pre, cfg.clip_post) if cfg.save_clips else None
@@ -141,8 +143,11 @@ def main():
             active = book.update(dogs, persons, zone, (w, h), now)
             decision = engine.evaluate(active, now, w)
             stats["dogs_seen"] = len(book.seen_ids)
+            stats["raw_track_ids"] = len(book.merger.map)      # before merging (shows ID switches)
 
-            overlay.draw(frame, zone, active, persons, decision.state, fps, stats, now)
+            if gate_anim is not None:
+                gate_anim.update(decision.state, now)
+            overlay.draw(frame, zone, active, persons, decision.state, fps, stats, now, gate_anim)
             st = decision.state.value
             for t in decision.new_warnings:
                 stats["warnings"] += 1

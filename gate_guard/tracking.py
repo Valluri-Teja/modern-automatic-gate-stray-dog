@@ -1,4 +1,7 @@
-"""Per-dog track state: distance to gate zone, dwell time, approach direction."""
+"""Per-dog track state: distance to gate zone, dwell time, approach direction.
+Also: confirmation (ignore one-frame flicker) and ID merging (the tracker often gives the
+same dog a new ID after a turn / occlusion - we map those back to one dog)."""
+import math
 from collections import deque
 from dataclasses import dataclass, field
 from typing import Optional
@@ -13,15 +16,14 @@ class Detection:
 
     @property
     def foot(self):
-        """Bottom-centre of the box: where the dog touches the ground.
-        Better than the box centre for 'is it standing in the gate area'."""
+        """Bottom-centre of the box: where the dog touches the ground."""
         x1, y1, x2, y2 = self.box
         return ((x1 + x2) / 2.0, float(y2))
 
 
 @dataclass
 class TrackState:
-    track_id: int
+    track_id: int                          # canonical (merged) dog ID
     first_seen: float
     last_seen: float
     box: tuple
@@ -36,6 +38,8 @@ class TrackState:
     status: str = "tracking"               # tracking|approaching|in_zone|entry|ignored
     warned: bool = False
     entry_logged: bool = False
+    hits: int = 0
+    confirmed: bool = False
 
     @property
     def in_zone(self):
@@ -59,25 +63,73 @@ def is_accompanied(dog_box, person_boxes, margin):
     return any(_overlaps(grown, p) for p in person_boxes)
 
 
+def _centre_size(box):
+    x1, y1, x2, y2 = box
+    return ((x1 + x2) / 2.0, (y1 + y2) / 2.0, max(x2 - x1, y2 - y1, 1.0))
+
+
+class IdMerger:
+    """Maps raw tracker IDs to canonical dog IDs.
+    A raw ID that appears for the first time is treated as an already-known dog when a
+    recently lost dog (gap <= merge_window) was last seen close by (<= merge_distance x size)
+    with a similar size."""
+
+    def __init__(self, cfg):
+        self.cfg = cfg
+        self.map = {}                      # raw id -> canonical id
+
+    def resolve(self, det, now, tracks, busy):
+        raw = det.track_id
+        if raw in self.map:
+            return self.map[raw]
+        cid = raw
+        if not self.cfg.no_merge:
+            cx, cy, size = _centre_size(det.box)
+            best, best_d = None, None
+            for tid, t in tracks.items():
+                gap = now - t.last_seen
+                if tid in busy or gap <= 0 or gap > self.cfg.merge_window:
+                    continue
+                tx, ty, tsize = _centre_size(t.box)
+                if not 0.4 <= size / tsize <= 2.5:
+                    continue
+                d = math.hypot(cx - tx, cy - ty)
+                if d > self.cfg.merge_distance * max(size, tsize):
+                    continue
+                if best_d is None or d < best_d:
+                    best, best_d = tid, d
+            if best is not None:
+                cid = best
+        self.map[raw] = cid
+        return cid
+
+
 class TrackBook:
     def __init__(self, cfg):
         self.cfg = cfg
-        self.tracks = {}
-        self.seen_ids = set()
+        self.tracks = {}                   # canonical id -> TrackState
+        self.seen_ids = set()              # confirmed unique dogs
+        self.merger = IdMerger(cfg)
 
     def update(self, dets, persons, zone, size, now):
         w, h = size
         cfg = self.cfg
+        busy = {self.merger.map[d.track_id] for d in dets if d.track_id in self.merger.map}
         for d in dets:
             if d.track_id < 0:
                 continue
-            t = self.tracks.get(d.track_id)
+            cid = self.merger.resolve(d, now, self.tracks, busy)
+            busy.add(cid)
+            t = self.tracks.get(cid)
             if t is None:
-                t = TrackState(d.track_id, now, now, d.box, d.conf, d.conf)
-                self.tracks[d.track_id] = t
-                self.seen_ids.add(d.track_id)
+                t = TrackState(cid, now, now, d.box, d.conf, d.conf)
+                self.tracks[cid] = t
             t.last_seen, t.box, t.conf = now, d.box, d.conf
             t.max_conf = max(t.max_conf, d.conf)
+            t.hits += 1
+            if not t.confirmed and t.hits >= cfg.min_hits:
+                t.confirmed = True
+                self.seen_ids.add(cid)
             t.dist = zone.signed_distance(d.foot, w, h)
             t.history.append((now, t.dist))
             while t.history and now - t.history[0][0] > cfg.approach_window * 2:
@@ -94,9 +146,10 @@ class TrackBook:
                     and now - t.last_in_zone > cfg.zone_grace):
                 t.in_zone_since = None
 
-        for tid in [k for k, t in self.tracks.items() if now - t.last_seen > cfg.track_timeout]:
+        keep_for = max(cfg.track_timeout, 0.0 if cfg.no_merge else cfg.merge_window)
+        for tid in [k for k, t in self.tracks.items() if now - t.last_seen > keep_for]:
             del self.tracks[tid]
-        return list(self.tracks.values())
+        return [t for t in self.tracks.values() if now - t.last_seen <= cfg.track_timeout]
 
     def _approaching(self, t, now, width):
         win = self.cfg.approach_window
